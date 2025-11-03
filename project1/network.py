@@ -1,5 +1,6 @@
 # Networks based on: https://simple.wikipedia.org/wiki/Network_topology#/media/File:NetworkTopologies.svg
 from typing import List, Tuple
+import random, math
 
 RING_NODES = [(1, 22), (2, 26), (3, 25), (4, 34), (5, 21), (6, 30)]
 RING_EDGES = [(1, 2), (1, 6), (2, 3), (3, 4), (4, 5), (5, 6)]
@@ -13,6 +14,59 @@ FC_EDGES = [(1, 2), (1, 3), (1, 4), (1, 5), (1, 6),
             (3, 4), (3, 5), (3, 6), 
             (4, 5), (4, 6), 
             (5, 6)]
+
+def create_network(type: str, num_nodes: int, min_val: int, max_val: int) -> Tuple[List[Tuple[int, int]], List[Tuple[int, int]]]:
+    nodes = []
+    edges = []
+    if type == 'ring':
+        for i in range(1, num_nodes + 1):
+            if i == num_nodes:
+                nodes.append((i, random.randint(min_val, max_val)))
+                edges.append((1, i))
+                break
+            nodes.append((i, random.randint(min_val, max_val)))
+            edges.append((i, i + 1))
+        return nodes, edges
+    if type == 'star':
+        for i in range(1, num_nodes):
+            nodes.append((i, random.randint(min_val, max_val)))
+            edges.append((i, num_nodes))
+        nodes.append((num_nodes, random.randint(min_val, max_val)))
+        return nodes, edges
+    if type == 'fc':
+        for i in range(1, num_nodes):
+            j = i + 1
+            nodes.append((i, random.randint(min_val, max_val)))
+            for j in range(j, num_nodes):
+                edges.append((i, j))
+        return nodes, edges
+    if type == 'mesh':
+        R = 1
+        C = num_nodes
+        for r in range(1, int(math.sqrt(num_nodes)) + 1):
+            if num_nodes % r == 0:
+                R = r
+                C = num_nodes // r
+        node_id = 1
+        node_coords = {}
+        for r in range(R):
+            for c in range(C):
+                nodes.append((node_id, random.randint(min_val, max_val)))
+                node_coords[node_id] = (r, c)
+                node_id += 1
+        for current_id, (r, c) in node_coords.items():
+            neighbor_col = c + 1
+            if neighbor_col < C:
+                right_id = (r * C) + neighbor_col + 1
+                edges.append((current_id, right_id))
+            neighbor_row = r + 1
+            if neighbor_row < R:
+                down_id = (neighbor_row * C) + c + 1
+                edges.append((current_id, down_id))
+
+        return nodes, edges
+
+                
 
 class Node:
     def __init__(self, id: int, data: int):

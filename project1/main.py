@@ -5,12 +5,13 @@ from network import (
     RING_NODES, RING_EDGES, 
     MESH_NODES, MESH_EDGES, 
     STAR_NODES, STAR_EDGES, 
-    FC_NODES, FC_EDGES
+    FC_NODES, FC_EDGES,
+    create_network
 )
 
-ring_topology = Topology(RING_NODES, RING_EDGES)
-
-def synchronous_avg():
-
-if __name__ == "__main__":
-    print("hello")
+nodes, edges = create_network('mesh', 6, 20, 30)
+topology = Topology(nodes, edges)
+print(nodes)
+print(edges)
+print("-----------------------------------------")
+print(topology.build_matrices())
