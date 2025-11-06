@@ -14,6 +14,8 @@ FC_EDGES = [(1, 2), (1, 3), (1, 4), (1, 5), (1, 6),
             (3, 4), (3, 5), (3, 6), 
             (4, 5), (4, 6), 
             (5, 6)]
+EX_NODES = [(1, 20), (2, 22), (3, 24), (4, 26), (1, 28)]
+EX_EDGES = [(1, 2), (1, 3), (2, 3), (2, 4), (3, 5), (4, 5)]
 
 def create_network(type: str, num_nodes: int, min_val: int, max_val: int) -> Tuple[List[Tuple[int, int]], List[Tuple[int, int]]]:
     nodes = []
@@ -34,10 +36,10 @@ def create_network(type: str, num_nodes: int, min_val: int, max_val: int) -> Tup
         nodes.append((num_nodes, random.randint(min_val, max_val)))
         return nodes, edges
     if type == 'fc':
-        for i in range(1, num_nodes):
+        for i in range(1, num_nodes + 1):
             j = i + 1
             nodes.append((i, random.randint(min_val, max_val)))
-            for j in range(j, num_nodes):
+            for j in range(j, num_nodes + 1):
                 edges.append((i, j))
         return nodes, edges
     if type == 'mesh':
@@ -64,9 +66,7 @@ def create_network(type: str, num_nodes: int, min_val: int, max_val: int) -> Tup
                 down_id = (neighbor_row * C) + c + 1
                 edges.append((current_id, down_id))
 
-        return nodes, edges
-
-                
+        return nodes, edges          
 
 class Node:
     def __init__(self, id: int, data: int):
@@ -76,29 +76,43 @@ class Node:
     
     def add_neighbor(self, neighbor: 'Node'):
         self.neighbors[neighbor.id] = neighbor
+    
+    def __str__(self) -> str:
+        neighbor_ids = list(self.neighbors.keys())
+        return (
+            f"ID: {self.id}, "
+            f"Data: {self.data}, "
+            f"Neighbors: {neighbor_ids}"
+        )
 
 class Topology:
-    def __init__(self, nodes_list: List[Tuple[int, int]], edges: List[Tuple[int, int]]):
+    def __init__(self, nodes_list: List[Tuple[int, int]], edges: List[Tuple[int, int]], alpha = 0.25):
         self.nodes_list = nodes_list
         self.edges = edges
-        self.nodes = {}
+        self.nodes = self.create_nodes()
+        self.connect_nodes()
+        self.adj_matrix, self.deg_matrix, self.inc_matrix, self.id_matrix = self.build_matrices()
+        self.w_matrix = self.build_weight_matrix(self.adj_matrix, self.deg_matrix, self.id_matrix, alpha)
     
-    def create_nodes(self):
-        for id, data in self.nodes:
-            self.nodes[id] = Node(id, data)
+    def create_nodes(self) -> List:
+        nodes = []
+        for id, data in self.nodes_list:
+            nodes.append(Node(id, data))
+        return nodes
     
     def connect_nodes(self):
         for id1, id2 in self.edges:
-            node1 = self.nodes.get(id1)
-            node2 = self.nodes.get(id2)
+            node1 = self.nodes[id1-1]
+            node2 = self.nodes[id2-1]
             node1.add_neighbor(node2)
             node2.add_neighbor(node1)
 
-    def build_matrices(self) -> Tuple[List[List[int]], List[List[int]], List[List[int]]]:
+    def build_matrices(self) -> Tuple[List[List[int]], List[List[int]], List[List[int]], List[List[int]]]:
         n = len(self.nodes_list)
         adj_matrix = [[0]*n for _ in range(n)]
         deg_matrix = [[0]*n for _ in range(n)]
         inc_matrix = [[0]*len(self.edges) for _ in range(n)]
+        id_matrix = [[0]*n for _ in range(n)]
         neighbors = [0]*n
 
         for i, (id1, id2) in enumerate(self.edges):
@@ -111,5 +125,16 @@ class Topology:
 
         for i in range(n):
             deg_matrix[i][i] = neighbors[i]
+            id_matrix[i][i] = 1
         
-        return adj_matrix, deg_matrix, inc_matrix
+        return adj_matrix, deg_matrix, inc_matrix, id_matrix
+    
+    def build_weight_matrix(self, adj : List[List[int]], deg: List[List[int]], id : List[List[int]], alpha) -> List[List[int]]:
+        n = len(adj)
+        w = []
+        for i in range(n):
+            row = []
+            for j in range(n):
+                row.append(id[i][j]-(alpha*(deg[i][j]-adj[i][j])))
+            w.append(row)
+        return w
