@@ -1,15 +1,176 @@
 # Mini Project 1: Additive Secret Sharing-based Distributed Average Consensus
+# Paper: https://vbn.aau.dk/ws/portalfiles/portal/317462183/additive_eusipco.pdf
+from network import	Topology, create_network
+from typing import Dict, List
+import random
+import matplotlib.pyplot as plt
 
-from network import (
-    Topology, Node, 
-    RING_NODES, RING_EDGES, 
-    MESH_NODES, MESH_EDGES, 
-    STAR_NODES, STAR_EDGES, 
-    FC_NODES, FC_EDGES,
-    EX_NODES, EX_EDGES, 
-    create_network
-)
+def additive_sharing(topology: Topology, share_floor: int = 1, share_ceiling: int = 1000) -> float:
+	
+	# Tracks the specific share sent from sender_id to receiver_id
+	sent_shares: Dict[int, Dict[int, int]] = {i.id: {} for i in topology.nodes} 
+	
+	# Tracks the sum of shares received by each node from all its neighbors
+	received_sums: Dict[int, int] = {i.id: 0 for i in topology.nodes}         
 
-nodes, edges = create_network('ring', 6, 20, 30)
-topology = Topology(nodes, edges)
-print(topology.w_matrix)
+	# Calculate the true original sum for verification
+	initial_sum_a = sum(n.data for n in topology.nodes)
+
+	# Draw Random Shares
+	for node in topology.nodes:
+		node_id = node.id
+		
+		# Draw a random share for each neighbor
+		for neighbor_id in node.neighbors.keys():
+			# Draw a random share between floor and ceiling
+			share = random.randint(share_floor, share_ceiling) 
+			sent_shares[node_id][neighbor_id] = share
+
+	# Exchange and accumulate received sums
+	for _, shares_to_send in sent_shares.items():
+		for receiver_id, share in shares_to_send.items():
+			# Accumulates the received numbers
+			received_sums[receiver_id] += share
+
+	# Adjust initial value
+	print("\n--- Performing Additive Secret Sharing (Setup) ---")
+	
+	for node in topology.nodes:
+		node_id = node.id
+		original_a = node.data
+		
+		# Sum of numbers sent by this node
+		sent_sum = sum(sent_shares[node_id].values())
+		
+		# Sum of numbers received by this node
+		received_sum = received_sums[node_id] 
+		
+		# Adjust the initial value
+		shared_s = original_a - sent_sum + received_sum
+		
+		# Update node data
+		node.data = shared_s 
+		
+		print(f"Node {node_id}: a_i={original_a}, Sent Sum={sent_sum}, Received Sum={received_sum} -> New State s_i={shared_s}")
+		
+	final_sum_s = sum(n.data for n in topology.nodes)
+	print(f"\nVerification: Original Sum (a_i): {initial_sum_a}. Final Sum (s_i): {final_sum_s}.")
+	# Return true avg
+	return initial_sum_a / len(topology.nodes)
+
+def run_synchronous_consensus(topology: 'Topology', true_average: float, max_iter: int = 200, tolerance: float = 0.001) -> List[float]:
+	"""
+	Synchronous approach: each node updates based on the weighted average of itself and all neighbors using the static W matrix.
+	"""
+	print("\nRunning Synchronous Consensus")
+	
+	N = len(topology.nodes)
+	W = topology.w_matrix
+	
+	x_vector = [float(n.data) for n in topology.nodes]
+	error_history = [] 
+	initial_error = max(abs(val - true_average) for val in x_vector)
+	error_history.append(initial_error)
+	for t in range(1, max_iter + 1):
+		
+		new_x_vector = [0.0] * N
+		
+		for i in range(N):
+			update_value = 0.0
+			for j in range(N):
+				# Calculate the weighted sum using the W matrix
+				update_value += W[i][j] * x_vector[j] 
+			new_x_vector[i] = update_value
+			
+		x_vector = new_x_vector
+		
+		# Check convergence
+		max_error = max(abs(val - true_average) for val in x_vector)
+		error_history.append(max_error)
+		#print(max_error)
+		
+		if max_error < tolerance:
+			print(f"Synchronous consensus converged after {t} iterations. Final max error: {max_error:.5f}")
+			# Return error_history for plotting the convergence graph
+			return error_history
+
+def run_asynchronous_consensus(topology: 'Topology', true_average: float, max_iter: int = 10000, threshold: float = 0.001) -> List[float]:
+	"""
+	Asynchronous approach: In each step, a random edge is activated, and the two connected nodes average their values.
+	"""
+	print("\nRunning Asynchronous Consensus")
+
+	# The list of edges (pairs of node IDs) to choose from
+	all_edges = topology.edges
+	
+	x_vector = [float(n.data) for n in topology.nodes]
+	error_history = [] 
+	initial_error = max(abs(val - true_average) for val in x_vector)
+	error_history.append(initial_error)
+	for t in range(1, max_iter + 1):
+		
+		# Randomly activate one edge (i, j)
+		id1, id2 = random.choice(all_edges)
+		
+		# Convert 1-based IDs to 0-based list indices
+		i, j = id1 - 1, id2 - 1
+		
+		# Get current values
+		xi_t = x_vector[i]
+		xj_t = x_vector[j]
+		
+		# Compute the average
+		new_average = (xi_t + xj_t) / 2
+		
+		# Update the values (both nodes update to the new average)
+		x_vector[i] = new_average
+		x_vector[j] = new_average
+		
+		max_error = max(abs(val - true_average) for val in x_vector)
+		error_history.append(max_error)
+		#print(max_error)
+		if max_error < threshold:
+			print(f"Asynchronous consensus converged after {t} iterations. Final max error: {max_error:.5f}")
+			# Return error_history for plotting the convergence graph
+			return error_history
+
+def plot_convergence(sync_errors: List[float], async_errors: List[float], filename: str = 'convergence_plot.png'):
+	"""
+	Plots the convergence of synchronous and asynchronous consensus algorithms.
+	"""
+	print(f"\nGenerating Plot: {filename}")
+	
+	sync_iterations = range(1, len(sync_errors) + 1)
+	
+	async_iterations = range(1, len(async_errors) + 1)
+
+	plt.figure(figsize=(10, 6))
+	
+	# Plot Synchronous Error
+	plt.plot(sync_iterations, sync_errors, label='Synchronous', color='blue')
+	
+	# Plot Asynchronous Error
+	plt.plot(async_iterations, async_errors, label='Asynchronous', color='red', linestyle='--')
+
+	plt.xlabel('Iterations')
+	plt.ylabel('Error')
+	plt.yscale('log') 
+	
+	plt.title('Convergence Comparison')
+	plt.legend()
+	plt.grid(True, which="both", ls="--", linewidth=0.5)
+	plt.savefig(filename)
+	plt.close()
+	
+	print(f"Plot saved successfully as {filename}")
+
+if __name__ == '__main__':
+	num_nodes = 6
+	alpha = 1 / num_nodes
+	nodes, edges = create_network('ring', num_nodes, 20, 30)
+	topology = Topology(nodes, edges, alpha)
+	true_avg = additive_sharing(topology=topology)
+	sync_errors = run_synchronous_consensus(topology=topology, true_average=true_avg)
+	async_errors = run_asynchronous_consensus(topology=topology, true_average=true_avg)
+
+	plot_convergence(sync_errors, async_errors, filename='convergence_plot.png')
