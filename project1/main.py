@@ -5,6 +5,7 @@ from network import	Topology, create_network
 from typing import Dict, List
 import random
 import matplotlib.pyplot as plt
+import copy
 
 def dp_obfuscation(topology: Topology, epsilon: float, distribution: str = 'laplace'):
 	
@@ -76,7 +77,7 @@ def additive_sharing(topology: Topology, share_floor: int = 1, share_ceiling: in
 	# Return true avg
 	return initial_sum_a / len(topology.nodes)
 
-def run_synchronous_consensus(topology: 'Topology', true_average: float, max_iter: int = 200, tolerance: float = 0.001) -> List[float]:
+def run_synchronous_consensus(topology: 'Topology', true_average: float, max_iter: int = 10000, tolerance: float = 0.001) -> List[float]:
 	"""
 	Synchronous approach: each node updates based on the weighted average of itself and all neighbors using the static W matrix.
 	"""
@@ -185,13 +186,60 @@ def plot_convergence(sync_errors: List[float], async_errors: List[float], filena
 	print(f"Plot saved successfully as {filename}")
 
 if __name__ == '__main__':
-	num_nodes = 10
+	num_nodes = 30
 	alpha = 1 / num_nodes
-	nodes, edges = create_network('star', num_nodes, 20, 30)
+	nodes, edges = create_network('ring', num_nodes, 20, 30)
 	topology = Topology(nodes, edges, alpha)
-	#true_avg = additive_sharing(topology=topology)
-	true_avg = dp_obfuscation(topology=topology, epsilon=10)
+	true_avg = additive_sharing(topology=topology)
+	#true_avg = dp_obfuscation(topology=topology, epsilon=10)
 	sync_errors = run_synchronous_consensus(topology=topology, true_average=true_avg)
 	async_errors = run_asynchronous_consensus(topology=topology, true_average=true_avg)
 
 	plot_convergence(sync_errors, async_errors, filename='convergence_plot.png')
+	'''
+    num_nodes = 10
+    alpha = 1 / num_nodes
+    
+    # 1. Create the base network
+    original_nodes, edges = create_network('star', num_nodes, 20, 30)
+    base_topology = Topology(original_nodes, edges, alpha)
+
+    # Dictionary to store error results for plotting
+    all_results = {}
+
+    # --- Scenario 1: Additive Secret Sharing ---
+    # We use deepcopy to ensure we don't permanently mess up the base_topology
+    topo_ss = copy.deepcopy(base_topology)
+    true_avg = additive_sharing(topology=topo_ss)
+    # We'll just track the Synchronous error for the main comparison
+    all_results['Secret Sharing (Exact)'] = run_synchronous_consensus(topo_ss, true_avg)
+
+    # --- Scenario 2: Differential Privacy (Varying Epsilon) ---
+    # Higher epsilon = Lower noise (More accurate)
+    # Lower epsilon  = Higher noise (More private)
+    epsilons = [0.1, 1.0, 10.0]
+    
+    for eps in epsilons:
+        topo_dp = copy.deepcopy(base_topology)
+        # DP returns the true avg of the original data for error calculation
+        true_avg = dp_obfuscation(topo_dp, epsilon=eps, distribution='laplace')
+        label = f'DP (eps={eps})'
+        all_results[label] = run_synchronous_consensus(topo_dp, true_avg)
+
+    # --- 3. Custom Plotting for Multiple Lines ---
+    plt.figure(figsize=(12, 7))
+    for label, errors in all_results.items():
+        plt.plot(range(len(errors)), errors, label=label)
+
+    plt.xlabel('Iterations')
+    plt.ylabel('Error (Difference from True Average)')
+    plt.yscale('log')
+    plt.title('Consensus Convergence: Secret Sharing vs. Differential Privacy')
+    plt.legend()
+    plt.grid(True, which="both", ls="--", alpha=0.5)
+    
+    filename = 'comparison_plot.png'
+    plt.savefig(filename)
+    plt.show()
+    print(f"\nComprehensive plot saved as {filename}")
+	'''
