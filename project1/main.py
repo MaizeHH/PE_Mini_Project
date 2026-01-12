@@ -1,9 +1,27 @@
 # Mini Project 1: Additive Secret Sharing-based Distributed Average Consensus
 # Paper: https://vbn.aau.dk/ws/portalfiles/portal/317462183/additive_eusipco.pdf
+import numpy as np
 from network import	Topology, create_network
 from typing import Dict, List
 import random
 import matplotlib.pyplot as plt
+
+def dp_obfuscation(topology: Topology, epsilon: float, distribution: str = 'laplace'):
+	
+    original_true_avg = sum(n.data for n in topology.nodes) / len(topology.nodes)
+
+    delta = 1.0  # Sensitivity
+    for node in topology.nodes:
+        if distribution == 'laplace':
+            noise = np.random.laplace(0, delta / epsilon)
+        elif distribution == 'gaussian':
+            noise = np.random.normal(0, delta / epsilon)
+        else:
+            noise = np.random.uniform(-(delta/epsilon), (delta/epsilon))
+        
+        node.data += noise
+        
+    return original_true_avg
 
 def additive_sharing(topology: Topology, share_floor: int = 1, share_ceiling: int = 1000) -> float:
 	
@@ -92,7 +110,8 @@ def run_synchronous_consensus(topology: 'Topology', true_average: float, max_ite
 		if max_error < tolerance:
 			print(f"Synchronous consensus converged after {t} iterations. Final max error: {max_error:.5f}")
 			# Return error_history for plotting the convergence graph
-			return error_history
+			break
+	return error_history
 
 def run_asynchronous_consensus(topology: 'Topology', true_average: float, max_iter: int = 10000, threshold: float = 0.001) -> List[float]:
 	"""
@@ -132,7 +151,8 @@ def run_asynchronous_consensus(topology: 'Topology', true_average: float, max_it
 		if max_error < threshold:
 			print(f"Asynchronous consensus converged after {t} iterations. Final max error: {max_error:.5f}")
 			# Return error_history for plotting the convergence graph
-			return error_history
+			break
+	return error_history
 
 def plot_convergence(sync_errors: List[float], async_errors: List[float], filename: str = 'convergence_plot.png'):
 	"""
@@ -165,11 +185,12 @@ def plot_convergence(sync_errors: List[float], async_errors: List[float], filena
 	print(f"Plot saved successfully as {filename}")
 
 if __name__ == '__main__':
-	num_nodes = 6
+	num_nodes = 10
 	alpha = 1 / num_nodes
-	nodes, edges = create_network('ring', num_nodes, 20, 30)
+	nodes, edges = create_network('star', num_nodes, 20, 30)
 	topology = Topology(nodes, edges, alpha)
-	true_avg = additive_sharing(topology=topology)
+	#true_avg = additive_sharing(topology=topology)
+	true_avg = dp_obfuscation(topology=topology, epsilon=10)
 	sync_errors = run_synchronous_consensus(topology=topology, true_average=true_avg)
 	async_errors = run_asynchronous_consensus(topology=topology, true_average=true_avg)
 
