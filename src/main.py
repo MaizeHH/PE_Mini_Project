@@ -1,4 +1,4 @@
-# Mini Project 1: Additive Secret Sharing-based Distributed Average Consensus
+# Mini Project: Additive Secret Sharing-based Distributed Average Consensus
 # Paper: https://vbn.aau.dk/ws/portalfiles/portal/317462183/additive_eusipco.pdf
 import numpy as np
 from network import	Topology, create_network
@@ -9,20 +9,20 @@ import copy
 
 def dp_obfuscation(topology: Topology, epsilon: float, distribution: str = 'laplace'):
 	
-    original_true_avg = sum(n.data for n in topology.nodes) / len(topology.nodes)
+	original_true_avg = sum(n.data for n in topology.nodes) / len(topology.nodes)
 
-    delta = 1.0  # Sensitivity
-    for node in topology.nodes:
-        if distribution == 'laplace':
-            noise = np.random.laplace(0, delta / epsilon)
-        elif distribution == 'gaussian':
-            noise = np.random.normal(0, delta / epsilon)
-        else:
-            noise = np.random.uniform(-(delta/epsilon), (delta/epsilon))
-        
-        node.data += noise
-        
-    return original_true_avg
+	delta = 1.0
+	for node in topology.nodes:
+		if distribution == 'laplace':
+			noise = np.random.laplace(0, delta / epsilon)
+		elif distribution == 'gaussian':
+			noise = np.random.normal(0, delta / epsilon)
+		else:
+			noise = np.random.uniform(-(delta/epsilon), (delta/epsilon))
+		
+		node.data += noise
+		
+	return original_true_avg
 
 def additive_sharing(topology: Topology, share_floor: int = 1, share_ceiling: int = 1000) -> float:
 	
@@ -106,7 +106,6 @@ def run_synchronous_consensus(topology: 'Topology', true_average: float, max_ite
 		# Check convergence
 		max_error = max(abs(val - true_average) for val in x_vector)
 		error_history.append(max_error)
-		#print(max_error)
 		
 		if max_error < tolerance:
 			print(f"Synchronous consensus converged after {t} iterations. Final max error: {max_error:.5f}")
@@ -129,7 +128,7 @@ def run_asynchronous_consensus(topology: 'Topology', true_average: float, max_it
 	error_history.append(initial_error)
 	for t in range(1, max_iter + 1):
 		
-		# Randomly activate one edge (i, j)
+		# Randomly activate one edge
 		id1, id2 = random.choice(all_edges)
 		
 		# Convert 1-based IDs to 0-based list indices
@@ -148,7 +147,6 @@ def run_asynchronous_consensus(topology: 'Topology', true_average: float, max_it
 		
 		max_error = max(abs(val - true_average) for val in x_vector)
 		error_history.append(max_error)
-		#print(max_error)
 		if max_error < threshold:
 			print(f"Asynchronous consensus converged after {t} iterations. Final max error: {max_error:.5f}")
 			# Return error_history for plotting the convergence graph
@@ -186,60 +184,82 @@ def plot_convergence(sync_errors: List[float], async_errors: List[float], filena
 	print(f"Plot saved successfully as {filename}")
 
 if __name__ == '__main__':
+	num_nodes = 10
+	alpha = 1 / num_nodes
+	
+	original_nodes, edges = create_network('star', num_nodes, 20, 30)
+	base_topology = Topology(original_nodes, edges, alpha)
+
+	all_results = {}
+
+	# Additive secret sharing
+	topo_ss = copy.deepcopy(base_topology)
+	true_avg_ss = additive_sharing(topology=topo_ss)
+	
+	all_results['AddSS - Sync'] = run_synchronous_consensus(topo_ss, true_avg_ss, max_iter=150)
+	all_results['AddSS - Async'] = run_asynchronous_consensus(topo_ss, true_avg_ss, max_iter=300)
+
+	# Differential privacy
+	distributions = ['laplace', 'gaussian', 'uniform']
+	epsilons = [0.1, 1.0, 10.0]
+	
+	for dist in distributions:
+		for eps in epsilons:
+			topo_dp = copy.deepcopy(base_topology)
+			original_avg = sum(n.data for n in topo_dp.nodes) / len(topo_dp.nodes)
+			dp_obfuscation(topo_dp, epsilon=eps, distribution=dist)
+			label = f'DP-{dist[:3]} (eps={eps})'
+			all_results[label] = run_synchronous_consensus(topo_dp, original_avg, max_iter=150)
+	
+	color_map = {
+			'AddSS - Sync': 'blue',
+			'AddSS - Async': 'orange',
+			'DP-lap': 'purple',
+			'DP-gau': 'red',
+			'DP-uni': 'green'
+		}
+
+	plt.figure(figsize=(14, 8))
+	
+	for label, errors in all_results.items():
+		line_color = 'gray'
+		for key in color_map:
+			if key in label:
+				line_color = color_map[key]
+				break
+
+		linestyle = '-'
+		if '0.1' in label: 
+			linestyle = ':'
+		elif '1.0' in label: 
+			linestyle = '--'
+		
+		
+		plt.plot(range(len(errors)), errors, label=label, 
+				 color=line_color, linestyle=linestyle, linewidth=2)
+
+	plt.xlabel('Iterations')
+	plt.ylabel('Error')
+	plt.yscale('log')
+	plt.title('Convergence: Additive Secret Sharing vs. Diff Privacy')
+	
+	plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize='small')
+	plt.grid(True, which="both", ls="--", alpha=0.5)
+	plt.tight_layout()
+	
+	filename = 'comparison_plot_final_noasync.png'
+	plt.savefig(filename)
+	plt.show()
+	print(f"\nFinal plot with 11 lines saved as {filename}")
+
+	'''
 	num_nodes = 30
 	alpha = 1 / num_nodes
 	nodes, edges = create_network('ring', num_nodes, 20, 30)
 	topology = Topology(nodes, edges, alpha)
 	true_avg = additive_sharing(topology=topology)
-	#true_avg = dp_obfuscation(topology=topology, epsilon=10)
 	sync_errors = run_synchronous_consensus(topology=topology, true_average=true_avg)
 	async_errors = run_asynchronous_consensus(topology=topology, true_average=true_avg)
 
 	plot_convergence(sync_errors, async_errors, filename='convergence_plot.png')
-	'''
-    num_nodes = 10
-    alpha = 1 / num_nodes
-    
-    # 1. Create the base network
-    original_nodes, edges = create_network('star', num_nodes, 20, 30)
-    base_topology = Topology(original_nodes, edges, alpha)
-
-    # Dictionary to store error results for plotting
-    all_results = {}
-
-    # --- Scenario 1: Additive Secret Sharing ---
-    # We use deepcopy to ensure we don't permanently mess up the base_topology
-    topo_ss = copy.deepcopy(base_topology)
-    true_avg = additive_sharing(topology=topo_ss)
-    # We'll just track the Synchronous error for the main comparison
-    all_results['Secret Sharing (Exact)'] = run_synchronous_consensus(topo_ss, true_avg)
-
-    # --- Scenario 2: Differential Privacy (Varying Epsilon) ---
-    # Higher epsilon = Lower noise (More accurate)
-    # Lower epsilon  = Higher noise (More private)
-    epsilons = [0.1, 1.0, 10.0]
-    
-    for eps in epsilons:
-        topo_dp = copy.deepcopy(base_topology)
-        # DP returns the true avg of the original data for error calculation
-        true_avg = dp_obfuscation(topo_dp, epsilon=eps, distribution='laplace')
-        label = f'DP (eps={eps})'
-        all_results[label] = run_synchronous_consensus(topo_dp, true_avg)
-
-    # --- 3. Custom Plotting for Multiple Lines ---
-    plt.figure(figsize=(12, 7))
-    for label, errors in all_results.items():
-        plt.plot(range(len(errors)), errors, label=label)
-
-    plt.xlabel('Iterations')
-    plt.ylabel('Error (Difference from True Average)')
-    plt.yscale('log')
-    plt.title('Consensus Convergence: Secret Sharing vs. Differential Privacy')
-    plt.legend()
-    plt.grid(True, which="both", ls="--", alpha=0.5)
-    
-    filename = 'comparison_plot.png'
-    plt.savefig(filename)
-    plt.show()
-    print(f"\nComprehensive plot saved as {filename}")
 	'''
